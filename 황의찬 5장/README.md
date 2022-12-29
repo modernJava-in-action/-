@@ -102,3 +102,200 @@ List<Dish> skip = specialMenu.stream()
 예를 들어 다음 코드는 300칼로리 이상의 처음 두 요리를 건너뛴 다음에 300칼로리가 넘는 나머지 요리를 반환합니다.  
 
 ## 5.3 매핑
+특정 객체에서 특정 데이터를 선택하는 작업은 데이터 처리 과정에서 자주 수행되는 연산입니다.  
+예를 들어 SQL의 테이블에서 특정 열만 선택할 수 있습니다.  
+스트림 API의 map과 flatMap 메서드는 `특정 데이터를 선택하는 기능`을 제공합니다.  
+  
+### 5.3.1 스트림의 각 요소에 함수 적용하기
+스트림은 함수를 인수로 받는 map 메서드를 지원합니다. 인수로 제공된 함수는 각 요소에 적용되며 함수를 적용한 결과가 새로운 요소로 매핑됩니다.  
+이 과정은 기존의 값을 고친다라는 개념보다는 새로운 버전을 만든다 라는 개념에 가까우므로 변환(transforming)에 가까운 매핑(mapping)이라는 단어를 사용합니다.  
+  
+```java
+List<String> dishNames = menu.stream()
+        .map(Dish::getName)//인수로 제공된 함수는 각 요소에 적용
+        .collect(Collectors.toList());
+```
+getName은 문자열을 반환하므로 map 메서드의 출력 스트림은 `Stream<String>` 형식을 가집니다.  
+  
+단어 리스트가 주어졌을 때 각 단어가 포함하는 글자 수의 리스트를 반환한다고 가정합니다.  
+리스트의 각 요소에 함수를 적용하면 가능합니다. 이전 예제에서 확인했던 것처럼 map을 이용할 수 있습니다.  
+`String::length`를 map에 전달해서 문제를 해결할 수 있습니다.  
+```java
+ List<String> words = Arrays.asList("Modern", "Java", "In", "Action");
+    List<Integer> wordLengths = words.stream()
+        .map(String::length)
+        .collect(Collectors.toList());
+```
+각 요리명의 길이를 알고 싶다면 다른 map 메서드를 연결할 수 있습니다.  
+```java
+List<Integer> dishNameLengths = menu.stream()
+        .map(Dish::getName)
+        .map(String::length)
+        .collect(Collectors.toList());
+```
+
+### 5.3.2 스트림 평면화 
+리스트에서 **고유 문자**로 이루어진 리스트를 반환해보겠습니다.  
+```java
+stringList.stream()
+        .map(word -> word.split(""))
+        .distinct()
+        .collect(Collectors.toList());
+```
+위 코드에서 map으로 전달한 람다는 각 단어의 String[](문자열 배열)을 반환한다는 점이 문제입니다.  
+따라서 map 메서드가 반환한 스트림의 형식은 `Stream<String[]>`입니다. 원하는 것은 `Stream<String>`입니다.  
+  
+다행히 flatMap이라는 메서드를 이용해서 이 문제를 해결할 수 있습니다.  
+  
+### map과 Arrays.stream 활용 
+우선 배열 스트림 대신 문자열 스트림이 필요합니다. 다음 코드에서 보여주는 것처럼 문자열을 받아 스트림을 만드는 `Arrays.stream()` 메서드가 있습니다.  
+```java
+String[] arrayOfWords = {"Goodbye", "World"};
+Stream<String> streamOfWords = Arrays.stream(arrayOfWords);
+```
+위 예제의 파이프라인에 Arrays.stream() 메서드를 적용해봅시다.  
+```java
+ List<Stream<String>> collect = words.stream()
+        .map(word -> word.split(""))
+        .map(Arrays::stream)
+        .distinct()
+        .collect(Collectors.toList());
+```
+결국 스트림 리스트 `List<Stream<String>>`이 만들어지면서 문제가 해결되지 않았습니다. 문제를 해결하려면  
+먼저 각 단어를 개별 문자열로 이루어진 배열로 만든 다음에 각 배열을 별도의 스트림으로 만들어야 합니다.  
+  
+### flatMap 사용  
+```java
+List<String> flatMap = words.stream()
+        .map(word -> word.split(""))
+        .flatMap(Arrays::stream)
+        .distinct()
+        .collect(Collectors.toList());
+```
+flatMap은 각 배열을 스트림이 아니라 스트림의 콘텐츠로 매핑합니다. 즉, map(Arrays::stream)과 달리 flatMap은 하나의 평면화된 스트림을 반환합니다.  
+요약하자면, flatMap 메서드는 각 값을 다른 스트림으로 만든 다음에 모든 스트림을 하나의 스트림으로 연결하는 기능을 수행합니다.  
+  
+flatMap 메서드는 스트림의 형태가 배열과 같을 때, 모든 원소를 단일 원소 스트림으로 반환할 수 있습니다.  
+스트림의 형태가 배열인 경우 또는 입력된 값을 또 다시 스트림의 형태로 반환하고자 할 때는 flatMap이 유용합니다.  
+  
+## 5.4 검색과 매핑
+`특정 속성이 데이터 집합에 있는지 여부를 검색`하는 데이터 처리도 자주 사용됩니다.  
+스트림 API는 **allMatch, anyMatch, noneMatch, findFirst, findAny**등 다양한 유틸리티 메서드를 제공합니다.  
+  
+### 5.4.1 프레디케이트가 적어도 한 요소와 일치하는지 확인
+프레디케이트가 주어진 스트림에서 적어도 한 요소와 일치하는지 확인할 때 anyMatch 메서드를 이용합니다.  
+```java
+ if (menu.stream().anyMatch(Dish::isVegetarian)) {
+      System.out.println("The meu is (somewhat) vegetarian friendly!!");
+    }
+```
+anyMatch는 불리언을 반환하므로 최종 연산입니다.  
+
+### 5.4.2 프레디케이트가 모든 요소와 일치하는지 검사  
+allMatch 메서드는 anyMatch와는 달리 스트림의 모든 요소가 주어진 프레디케이트와 일치하는 지 검사합니다.  
+```java
+boolean isHealthy = menu.stream()
+        .allMatch(dish -> dish.getCalories() < 1000);
+```
+
+### NONEMATCH
+noneMatch는 allMatch와 반대 연산을 수행합니다. 즉, nonMatch는 주어진 프레디케이트와 일치하는 요소가 없는지 확인합니다.  
+예를 들어 이전 예제를 다음처럼 noneMatch로 다시 구현할 수 있습니다.  
+```java
+boolean isHealthWithNoneMatch = menu.stream()
+        .noneMatch(d -> d.getCalories() >= 1000);
+```
+anyMatch, allMatch, noneMatch 세 머서드는 스트림 쇼트서킷 기법(Java의 &&, ||)와 같은 연산을 활용합니다.  
+마찬가지로 스트림의 모든 요소를 처리할 필요 없이 주어진 크기의 스트림을 생성하는 limit도 쇼트서킷 연산입니다.  
+  
+### 5.4.3 요소 검색 
+findAny 메서드는 현재 스트림에서 **임의의 요소**를 반환합니다. findAny 메서드를 다른 스트림연산과 연결해서 사용할 수 있습니다.  
+```java
+Optional<Dish> dish = menu.stream()
+        .filter(Dish::isVegetarian)
+        .findAny();
+```
+스트림 파이프라인은 내부적으로 단일 과정으로 실행할 수 있도록 최적화됩니다.  
+즉, 쇼트서킷을 이용해서 결과를 찾는 즉시 실행을 종료합니다.  
+  
+### Optional이란?
+`java.util.Optional`. `Optional<T>` 클래스는 값의 존재나 부재 여부를 표현하는 컨테이너 클래스입니다.  
+Optional은 값이 존재하는지 확인하고 값이 없을 때 어떻게 처리할지 강제하는 기능을 제공합니다.  
++ isPresent()는 Optional이 값을 포함하면 참(true)을 반환하고, 값을 포함하지 않으면 거짓(false)을 반환합니다.  
++ `ifPresent(Consumer<T> block)`은 값이 있으면 주어진 블록을 실행합니다. Consumer : T -> void  
++ T get()은 값이 존재하면 값을 반환하고, 값이 없으면 NoSuchElementException을 일으킵니다.  
++ T orElse(T other)는 값이 있으면 값을 반환하고, 값이 없으면 기본값을 반환합니다.  
+
+### 5.4.4 첫 번째 요소 찾기
+```java
+ List<Integer> someNumbers = Arrays.asList(1, 2, 3, 4, 5);
+    Optional<Integer> firstSquareDivisibleByThree = someNumbers.stream()
+        .map(n -> n * n)
+        .filter(n -> n % 3 == 0)
+        .findFirst();
+
+System.out.println(firstSquareDivisibleByThree.orElseThrow(NoSuchElementException::new));
+```
+병렬성 때문에 findFirst와 findAny 모두 필요하다. 병렬 실행에서는 첫 번째 요소를 찾기 어려우므로 반환 순서가 상관없다면  
+병렬 스트림에서는 제약이 적은 findAny를 사용한다.  
+  
+## 리듀싱
+스트림 요소를 조합해서 더 복잡한 질의를 표현하는 방법을 설명합니다.  
+예를 들어, 메뉴의 모든 칼로리의 합계를 구하시오, 메뉴에서 칼로리가 가장 높은 요리는? 같은 질의.  
+  
+이러한 질의를 수행하려면 Integer 같은 결과가 나올 때까지 스트림의 모든 요소를 반복적으로 처리해야 합니다.  
+이런 질의를 **리듀싱 연산(모든 스트림 요소를 처리해서 값으로 도출하는)**이라고 합니다.  
+
+### 5.5.1 요소의 합
+for-each 루프를 사용해서 리스트의 숫자 요소를 더하는 코드는 다음과 같습니다.  
+```java
+int sum = 0;
+for (int x : numbers) {
+    sum += x;
+}
+```
+reduce를 이용하면 다음처럼 스트림의 모든 요소를 더할 수 있습니다.  
+```java
+  int sum = numbers.stream()
+        .reduce(0, (a, b) -> a + b);
+```
+reduce로 다른 람다를 넘겨주면 모든 요소에 곱셈을 적용할 수 있습니다.  
+```java
+int product = numbers.stream()
+        .reduce(1, (a, b) -> a * b);
+```
+메서드 참조를 이용하면 이 코드를 좀 더 간결하게 만들 수 있습니다.  
+```java
+int sum = numbers.stream()
+        .reduce(0, Integer::sum);
+```
+  
+### 초깃값 없음 
+초깃값을 받지 않도록 오버로드된 reduce도 있다. 그러나 이 reduce는 Optional 객체를 반환합니다.  
+```java
+Optional<Integer> NoIdentity = numbers.stream().reduce((a, b) -> (a + b));
+```
+스트림에 아무 요소도 없는 상황이라면, 초기값이 없으므로 reduce는 합계를 반환할 수 없다. 따라서 합계가 없음을 가리킬 수 있도록  
+Optional 객체로 감싼 결과를 반환합니다.  
+  
+### 5.5.2 최댓값과 최솟값
+```java
+//최댓값
+Optional<Integer> max = numbers.stream()
+    .reduce(Integer::max);
+    
+//최솟값
+Optional<Integer> min = numbers.stream()
+    .reduce(Integer::min);
+```
+
+
+
+
+
+
+
+
+
+
+
