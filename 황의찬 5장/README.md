@@ -288,6 +288,270 @@ Optional<Integer> max = numbers.stream()
 Optional<Integer> min = numbers.stream()
     .reduce(Integer::min);
 ```
+map과 reduce 메서드를 이용해서 스트림의 요리 개수를 계산할 수 있습니다.  
+스트림의 각 요소를 1로 매핑한 다음에 reduce로 이들의 합계를 계산하는 방식으로 문제를 해결할 수 있습니다.  
+```java
+ int count = numbers.stream()
+        .map(d -> 1)
+        .reduce(0, (a, b) -> (a + b));
+```
+map과 reduce를 연결하는 기법을 맵 리듀스 패턴이라고 하며, (map - reduce pattern) 쉽게 병렬화하는 특징 덕분에 구글이 웹 검색에 적용하면서 유용해졌습니다.  
+  
+reduce를 이용하면 내부 반복이 추상화되면서 내부 구현에서 병렬로 reduce를 실행할 수 있게 됩니다.  
+반복적인 합계에서는 sum 변수를 공유해야 하므로 쉽게 병렬화하기 어렵습니다.  
+강제적으로 동기화시키더라도 결국 병렬화로 얻어야 할 이득이 스레드 간의 소모적인 경쟁 때문에 상쇄되어 버린다는 사실을 알게 될 것입니다.  
+  
+사실 이 작업을 병렬화하려면 입력을 분할하고, 분할된 입력을 더한 다음에, 더한 값을 합쳐야 합니다.  
+지금 중요한 사실은 가변 누적자 패턴은 병렬화와 거리가 너무 먼 기법이라는 점입니다.  
+  
+7장에서는 스트림의 모든 요소를 더하는 코드를 병렬로 만드는 방법도 설명합니다.  
+`int sum = numbers.parallelStream().reduce(0, Integer::sum);`  
+  
+나중에 설명하겠지만 위 코드를 병렬로 실행하려면 대가를 지불해야 합니다.  
+즉, reduce에 넘겨준 람다의 상태(인수턴수 변수 같은)가 바뀌지 말아야 하며, 연산이 어떤 순서로 실행되더라도 결과가 바뀌지 않는 구조여야 합니다.  
+
+### 스트림 연산 : 상태 없음과 상태 있음 
+`map, filter` 등은 입력 스트림에서 각 요소를 받아 0 또는 결과를 출력 스트림으로 보냅니다.  
+따라서(사용자가 제공한 람다나 메서드 참조가 내부적인 가변 상태를 갖지 않는다는 가정하에) 이들은 보통 상태가 없는,  
+즉 내부 상태를 갖지 않는 연산(stateless operation)입니다.  
+  
+하지만 `reduce, sum, max`같은 연산은 결과를 누적할 내부 상태가 필요합니다.  
+스트림에서 처리하는 요소 수와 관계없이 내부 상태의 크기는 한정(bounded)되어 있습니다.  
+  
+반면 `sorted, distinct` 같은 연산은 filter나 map처럼 스트림을 입력으로 받아 다른 스트림을 출력하는 것처럼 보일 수 있습니다.  
+하지만 `sorted, distinct`는 filter나 map과는 다릅니다. 스트림의 요소를 정렬하거나 중복을 제거하려면 과거의 이력을 알고 있어야 합니다.  
+  
+예를 들어 어떤 요소를 출력 스트림으로 추가하려면 모든 요소가 버퍼에 추가되어 있어야 합니다.  
+연산을 수행하는 데 필요한 저장소 크기는 정해져있지 않습니다. 따라서 스트림의 크기가 크거나 무한이라면 문제가 생길 수 있습니다.  
+예를 들어 모든 소수를 포함하는 스트림을 역순으로 만들면?  
+  
+이러한 연산을 내부 상태를 갖는 연산이라고 합니다.  
+  
+## 5.6 실전 연습
+예제에 사용한 Trader와 Transaction 클래스는 다음과 같습니다.  
+```java
+package com.me.modernJavainAction.chapter5;
+
+import java.util.Objects;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
+@AllArgsConstructor
+@Getter @Setter
+public class Trader {
+  private final String name;
+  private final String city;
+
+  @Override
+  public int hashCode() {
+    int hash = 17;
+    hash = hash * 31 + (name == null ? 0 : name.hashCode());
+    hash = hash * 31 + (city == null ? 0 : city.hashCode());
+    return hash;
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (other == this) {
+      return true;
+    }
+    if (!(other instanceof Trader)) {
+      return false;
+    }
+    Trader o = (Trader) other;
+    boolean eq = Objects.equals(name,  o.getName());
+    eq = eq && Objects.equals(city, o.getCity());
+    return eq;
+  }
+
+  @Override
+  public String toString() {
+    return "Trader:" + this.name + " in " + this.city;
+  }
+}
+```
+
+```java
+package com.me.modernJavainAction.chapter5;
+
+import java.util.Objects;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
+@AllArgsConstructor
+@Getter @Setter
+public class Transaction {
+  public final Trader trader;
+  private final int year;
+  private final int value;
+
+  @Override
+  public int hashCode() {
+    int hash = 17;
+    hash = hash * 31 + (trader == null ? 0 : trader.hashCode());
+    hash = hash * 31 + year;
+    hash = hash * 31 + value;
+    return hash;
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (other == this) {
+      return true;
+    }
+    if (!(other instanceof Transaction)) {
+      return false;
+    }
+    Transaction o = (Transaction) other;
+    boolean eq = Objects.equals(trader,  o.getTrader());
+    eq = eq && year == o.getYear();
+    eq = eq && value == o.getValue();
+    return eq;
+  }
+
+  @SuppressWarnings("boxing")
+  @Override
+  public String toString() {
+    return String.format("{%s, year: %d, value: %d}", trader, year, value);
+  }
+}
+```
+다음과 같은 거래자(Trader) 리스트와 트랜잭션(Transaction) 리스트를 이용합니다.  
+```java
+Trader raoul = new Trader("Raoul", "Cambridge");
+Trader mario = new Trader("Mario", "Milan");
+Trader alan = new Trader("Alan", "Cambridge");
+Trader brian = new Trader("Brian", "Cambridge");
+
+List<Transaction> transactions = Arrays.asList(
+        new Transaction(brian, 2011, 300),
+        new Transaction(raoul, 2012, 1000),
+        new Transaction(raoul, 2011, 400),
+        new Transaction(mario, 2012, 710),
+        new Transaction(mario, 2012, 700),
+        new Transaction(alan, 2012, 950)
+);
+```
+문제 풀이 :
+```java
+package com.me.modernJavainAction.chapter5;
+
+import static java.util.Comparator.*;
+import static java.util.stream.Collectors.*;
+
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+public class PuttingIntoPractice {
+
+  public static void main(String[] args) {
+    Trader raoul = new Trader("Raoul", "Cambridge");
+    Trader mario = new Trader("Mario", "Milan");
+    Trader alan = new Trader("Alan", "Cambridge");
+    Trader brian = new Trader("Brian", "Cambridge");
+
+    List<Transaction> transactions = Arrays.asList(
+        new Transaction(brian, 2011, 300),
+        new Transaction(raoul, 2012, 1000),
+        new Transaction(raoul, 2011, 400),
+        new Transaction(mario, 2012, 710),
+        new Transaction(mario, 2012, 700),
+        new Transaction(alan, 2012, 950)
+    );
+
+    //1번 : 2011년에 일어난 모든 트랜잭션을 찾아 값을 오름차순으로 정리하시오.
+    List<Transaction> practice1 = transactions.stream()
+        .filter(year -> year.getYear() == 2011)
+        .sorted(comparing(Transaction::getValue))
+        .collect(toList());
+    System.out.println("practice 1 " + practice1);
+
+    //2번 : 거래자가 근무하는 모든 도시를 중복 없이 나열하시오.
+    List<String> practice2 = transactions.stream()
+        .map(Transaction::getTrader)
+        .map(Trader::getCity)
+        .distinct()
+        .collect(toList());
+    System.out.println("practice 2 " + practice2);
+
+    //2번 추가
+    transactions.stream()
+        .map(transaction ->  transaction.getTrader().getCity())
+        .distinct()
+        .collect(toList());
+
+    //3번 : 케임브리지에서 근무하는 모든 거래자를 찾아서 이름순으로 정렬하시오.
+    List<Trader> practice3 = transactions.stream()
+        .map(Transaction::getTrader)
+        .filter(trader -> trader.getCity().equals("Cambridge"))
+        .distinct()
+        .sorted(comparing(Trader::getName))
+        .collect(toList());
+    System.out.println("practice 3 " + practice3);
+
+    //4번 : 모든 거래자의 이름을 알파벳순으로 정렬해서 반환하시오
+    String practice4 = transactions.stream()
+        .map(transaction -> transaction.getTrader().getName())
+        .distinct()
+        .sorted()
+        .reduce("", (n1, n2) -> n1 + n2 + " ");
+    System.out.println("practice 4 " + practice4);
+
+    //4번 joining 즉, StringBuilder 이용
+    transactions.stream()
+        .map(transaction -> transaction.getTrader().getName())
+        .distinct()
+        .sorted()
+        .collect(joining());
+
+    //5번 : 밀라노에 거래자가 있는가?
+    boolean milanBased = transactions.stream()
+        .anyMatch(transaction -> transaction.getTrader().getCity().equals("Milan"));
+    System.out.println("practice 5 " + milanBased);
+
+    //6번 : 케임브리지에 거주하는 거래자의 모든 트랜잭션값을 출력하시오.
+    System.out.print("practice 6 ");
+    transactions.stream()
+        .filter(t -> "Cambridge".equals(t.getTrader().getCity()))
+        .map(Transaction::getValue)
+        .forEach(i -> System.out.printf("%d ", i));
+    System.out.println();
+
+    //7번 : 전체 트랜잭션 중 최댓값은 얼마인가?
+    Optional<Integer> practice7 = transactions.stream()
+        .map(Transaction::getValue)
+        .reduce(Integer::max);
+    System.out.println("practice 7 " + practice7.orElseThrow(NoSuchElementException::new));
+
+    //8번 : 전체 트랜잭션 중 최솟값은 얼마인가?
+    Optional<Integer> practice8 = transactions.stream()
+        .map(Transaction::getValue)
+        .reduce(Integer::min);
+    System.out.println("practice 8 " + practice8.orElseThrow(NoSuchElementException::new));
+
+    //8번 : 람다 사용
+    Optional<Transaction> practice88 = transactions.stream()
+        .reduce((t1, t2) -> t1.getValue() < t2.getValue() ? t1 : t2);
+
+  } //main END
+}
+```
+스트림은 최댓값이나 최솟값을 계산하는 데 사용할 키를 지정하는 Comparator를 인수로 받는 min과 max 메서드를 제공합니다.  
+따라서 min과 max를 이용하면 더 쉽게 문제를 해결할 수 있습니다.  
+```java
+Optional<Transaction> min = transactions.stream()
+        .min(comparing(Transaction::getValue));
+```
+## 5.7 숫자형 스트림
+
+
+
 
 
 
