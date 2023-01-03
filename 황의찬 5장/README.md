@@ -549,6 +549,181 @@ Optional<Transaction> min = transactions.stream()
         .min(comparing(Transaction::getValue));
 ```
 ## 5.7 숫자형 스트림
+reduce 메서드로 스트림 요소의 합을 구하는 예제를 살펴봤습니다.  
+```java
+int calories = menu.stream()
+        .map(Dish::getCalories)
+        .reduce(0, Integer::sum); //박싱 비용이 숨어있음 
+```
+사실 위 코드에는 박싱 비용이 숨어있습니다. 내부적으로 합계를 계산하기 전에 Integer를 기본형으로 언박싱해야 합니다.  
+다음 코드처럼 직접 sum 메서드를 호출할 수 있다면 더 좋지 않을까?  
+```java
+int calories = menu.stream()
+                .map(Dish::getCalories)
+                .sum();
+```
+하지만 위 코드처럼 sum 메서드를 직접 호출할 수 없습니다. sum 메서드가 `Stream<T>`를 생성하기 때문입니다.  
+스트림의 요소 형식은 Integer지만 인터페이스에는 sum 메서드가 없습니다. 왜냐하면  
+menu처럼 `Stream<Dish>` 형식의 요소만 있다면 sum이라는 연산을 수행할 수 없기 때문입니다.  
+  
+다행히도 스트림 API 숫자 스트림을 효율적으로 처리할 수 있도록 기본형 특화 스트림(Primitive Stream Specialization)을 제공합니다.  
+### 5.7.1 기본형 특화 스트림
+스트림 API는 박싱 비용을 피할 수 있도록 int요소에 특화된 `IntStream`, double 요소에 특화된 `DoubleStream`, long 요소에 특화된 `LongStream`  
+을 제공합니다. 각각의 인터페이스는 숫자 스트림의 합계를 계산하는 sum, 최댓값 요소를 검색하는 max 같이 자주 사용하는  
+숫자 관련 리듀싱 연산 수행 메서드를 제공합니다.  
+  
+또한 필요할 때 다시 객체 스트림으로 복원하는 기능도 제공합니다.  
+특화 스트림은 `오직 박싱 과정에서 일어나는 효율성`과 관련 있으며 스트림에 추가 기능을 제공하지는 않는다는 사실을 기억합니다.  
+  
+### 숫자 스트림으로 매핑 
+스트림을 특화 스트림으로 변환할 때는 `mapToInt, mapToDouble, mapToLong` 세 가지 메서드를 가장 많이 사용합니다.  
+이들 메서드는 map과 정확히 같은 기능을 수행하지만, `Stream<T>` 대신 특화된 스트림을 반환합니다.  
+```java
+int calories = menu.stream()
+        .mapToInt(Dish::getCalories) //IntStream 반환 
+        .sum();
+```
+mapToInt 메서드는 각 요리에서 모든 칼로리(Integer 형식)을 추출한 다음에 IntStream(`Stream<Integer>`)을 반환합니다.  
+따라서 IntStream 인터페이스에서 제공하는 sum 메서드를 이용해서 칼로리 합계를 계산할 수 있습니다.  
+  
+스트림이 비어있으면 sum은 기본값 0을 반환합니다.  
+  
+### 객체 스트림으로 복원하기
+숫자 스트림을 만든 다음에, 원상태인 특화되지 않은 스트림으로 복원할 수 있을까?  
+IntStream은 기본형의 정수값만 만들 수 있습니다.  
+IntStream의 map 연산은 'int를 인수로 받아서 int를 반환하는 람다(IntUnaryOperator)'를 인수로 받습니다.  
+  
+하지만 정수가 아닌 Dish 같은 다른 값을 반환하고 싶으면 어떻게 해야 할까요?  
+`boxed` 메서드를 이용해서 특화 스트림을 일반 스트림으로 변환할 수 있습니다.  
+```java
+IntStream intStream = menu.stream()
+        .mapToInt(Dish::getCalories);
+    Stream<Integer> stream = intStream.boxed();
+```
+### 기본값 : OptionalInt
+합계 예제에서는 0이라는 기본값이 있었으므로 별 문제가 없었습니다.  
+하지만 IntStream에서 최댓값을 찾을 때는 0이라는 기본값 때문에 잘못된 결과가 도출될 수 있습니다.  
+스트림에 요소가 없는 상황과 실제 최댓값이 0인 상황을 어떻게 구별할 수 있을까요?  
+  
+값이 존재하는지 여부를 가리킬 수 있는 컨테이너 클래스 Optional 을 언급한 적이 있습니다.  
+  
+Optional을 Integer, String 등의 참조 형식으로 파라미터화할 수 있습니다.  
+또한, `OptionalInt, OptionalDouble, OptionalLong` 세 가지 기본형 특화 스트림 버전도 제공합니다.  
+  
+다음처럼 OptionalInt를 이용해서 IntStream의 최댓값 요소를 찾을 수 있습니다.  
+```java
+OptionalInt maxCalories = menu.stream()
+        .mapToInt(Dish::getCalories)
+        .max();
+```
+이제 OptionalInt를 이용해서 최댓값이 없는 상황에 사용할 기본값을 명시적으로 정의할 수 있습니다.  
+```java
+//최댓값이 없을 때 1
+int max = maxCalories.orElse(1);
+```
+
+### 5.7.2 숫자 범위
+Java8의 IntStream과 LongStream에서는 range와 rangeClosed라는 두 가지 정적 메서드를 제공합니다.  
+두 메서드 모두 첫 번째 인수로 시작값을, 두 번째 인수로 종료값을 가집니다.  
+range : 시작값과 종료값이 결과에 포함되지 않습니다.  
+rangeClosed : 시작값과 종료값이 결과에 포함됩니다.  
+  
+```java
+IntStream evenNumbers = IntStream.rangeClosed(1, 100) // [1,100]의 범위를 나타냅니다.
+        .filter(n -> n % 2 == 0);
+System.out.println(evenNumbers.count()); //1부터 100까지에는 50개의 짝수가 있습니다.
+```
+filter를 호출해도 실제로는 아무 계산도 이루어지지 않습니다.  
+최종적으로 결과 스트림에 count를 호출합니다.  
+count는 최종 연산이므로 스트림을 처리해서 1부터 100까지의 숫자 범위에서 짝수 50개를 반환합니다.  
+  
+이때 rangeClosed 대신에 IntStream.range(1,100)을 사용하면 1과 100을 포함하지 않으므로 짝수 49개를 반환합니다.  
+  
+### 5.7.3 숫자 스트림 활용 : 피타고라스 수
+피타고라스는 a * a + b * b = c * c 공식을 만족하는 세 개의 정수 (a, b, c)가 존재함을 발견했습니다.  
+(c² = a² + b²)  
+
+### 세 수 표현하기  
+예를 들어 (3, 4, 5)를 new int[]{3, 4, 5}로 표현할 수 있습니다.  
+  
+### 좋은 필터링 조합
+누군가 세 수 중에서 a, b 두 수만 제공했다고 가정해봅니다.  
+두 수가 피타고라스 수의 일부가 될 수 있는 조합인지 어떻게 확인할 수 있을까요? a * a + b * b 의 제곱근이 정수인지 확인할 수 있습니다.  
+```java
+Math.sqrt(a*a + b*b) % 1 == 0;
+```
+이를 filter에 다음처럼 활용할 수 있습니다.  
+```java
+filter(b -> Math.sqrt(a * a + b * b) % 1 == 0)
+```
+위 코드에서 a라는 값이 주어지고 b는 스트림으로 제공된다고 가정할 때  
+**filter로 a와 함께 피타고라스 수를 구성하는 모든 b를 필터링 할 수 있습니다.**  
+  
+### 집합 생성 
+필터를 이용해서 옳은 조합을 갖는 a,b를 선택할 수 있게 되었습니다. 이제 마지막 세 번째 수를 찾아야 합니다.  
+다음처럼 map을 이용해서 각 요소를 피타고라스 수로 변환할 수 있습니다.  
+```java
+stream.filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+      .map(b -> new int[]{a, b, (int)Math.sqrt(a * a + b * b)}); //a와 b를 이용해서 나머지 수를 추출 
+```
+  
+### b값 생성 
+```java
+ IntStream.rangeClosed(1, 100)
+        .filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+        .boxed()//객체 스트림으로 복원
+        .map(b -> new int[]{a, b, (int) Math.sqrt(a * a + b * b)});
+```
+filter 연산 다음에 rangeClosed가 반환한 IntStream을 boxed를 이용해서 `Stream<Integer>`로 복원했습니다.  
+map은 스트림의 각 요소를 int 배열로 변환하기 때문입니다.  
+IntStream의 map 메서드는 스트림의 각 요소로 int가 반환될 것을 기대하지만 이는 우리가 원하는 연산이 아닙니다.  
+  
+개체값 스트림을 반환하는 IntStream의 mapToObj 메서드를 이용해서 이 코드를 재구현할 수 있습니다.  
+```java
+IntStream.rangeClosed(1, 100)
+         .filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+         .mapToObj(b -> new int[]{a, b, (int)Math.sqrt(a*a + b*b)});
+```
+  
+### a값 생성 및 최종 코드
+```java
+Stream<int[]> pythagoreanTriples = IntStream.rangeClosed(1, 100).boxed()
+        .flatMap(a ->
+            IntStream.rangeClosed(a, 100)
+                .filter(b -> Math.sqrt(a * a + b * b) % 1 == 0)
+                .mapToObj(b ->
+                    new int[]{a, b, (int) Math.sqrt(a * a + b * b)})
+        );
+```
+flatMap은 어떤 연산을 수행하는 것일까요?  
+우선 a에 사용할 1부터 100까지의 숫자를 만들었습니다.  
+그리고 주어진 a를 이용해서 세 수의 스트림을 만듭니다.  
+  
+스트림 a의 값을 매핑하면 스트림의 스트림이 만들어질 것입니다.  
+따라서 flatMap 메서드는 생성된 각각의 스트림을 하나의 평준화된 스트림으로 만들어줍니다.  
+  
+결과적으로 세 수로 이루어진 스트림을 얻을 수 있습니다.  
+  
+이제 limit을 이용해서 얼마나 많은 세 수를 포함하는 스트림을 만들 것인지만 결정하면 됩니다.  
+```java
+pythagoreanTriples.limit(5)
+        .forEach(t -> System.out.println(t[0] + ", " + t[1] + ", " + t[2])); // T -> void
+```
+
+### 개선할 점?
+현재 문제 해결 코드에서는 제곱근을 두 번 계산합니다.  
+따라서 `(a*a, b*b, a*a+b*b)` 형식을 만족하는 세 수를 만든 다음에 우리가 원하는 조건에 맞는 결과만 필터링하는 것이 더 최적화된 방법입니다.  
+```java
+Stream<double[]> pythagoreanTriplesV2 = IntStream.rangeClosed(1, 100).boxed()
+        .flatMap(a -> IntStream.rangeClosed(a, 100)
+            .mapToObj(
+                b -> new double[]{a, b, Math.sqrt(a * a + b * b)})
+            .filter(t -> t[2] % 1 == 0)); // 세 수의 세 번째 요소는 반드시 정수여야 한다.
+```
+
+## 5.8 스트림 만들기 
+
+
 
 
 
