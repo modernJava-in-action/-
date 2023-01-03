@@ -722,6 +722,51 @@ Stream<double[]> pythagoreanTriplesV2 = IntStream.rangeClosed(1, 100).boxed()
 ```
 
 ## 5.8 스트림 만들기 
+stream 메서드로 컬렉션에서 스트림을 얻을 수 있었습니다. 그 뿐만 아니라 범위의 숫자에서 스트림을 만드는 방법도 설명했습니다.  
+이 절에서는 일련의 값, 배열, 파일, 심지어 함수를 이용한 무한 스트림 만들기 등 다양한 방식으로 스트림을 만드는 방법을 설명합니다.  
+  
+### 5.8.1 값으로 스트림 만들기
+임의의 수를 인수로 받는 정적 메서드 Stream.of 를 이용해서 스트림을 만들 수 있습니다.  
+예를 들어 다음 코드는 Stream.of로 문자열 스트림을 만드는 예제입니다.  
+  
+**스트림의 모든 문자열을 대문자로 변환한 후 문자열을 하나씩 출력합니다.**
+```java
+Stream<String> strings = Stream.of("Modern ", "Java ", "In ", "Action ");
+strings.map(String::toUpperCase).forEach(System.out::println);
+```
+  
+### 5.8.2 null이 될 수 있는 객체로 스트림 만들기
+때로는 null이 될 수 있는 객체를 스트림(객체가 null이라면 빈 스트림)으로 만들어야 할 수 있습니다.  
+예를 들어 System.getProperty는 제공된 키에 대응하는 속성이 없으면 null을 반환합니다.  
+  
+이런 메소드를 스트림에 활용하려면 다음처럼 null을 명시적으로 확인해야 했습니다.  
+```java
+String homeValue = System.getProperty("home");
+Stream<String> homeValueStream
+      = homeValue == null ? Stream.empty() : Stream.of(homeValue);
+```
+Stream.ofNullable을 이용해 다음처럼 코드를 구현할 수 있습니다.  
+```java
+Stream<String> homeValueStreamWithNullable 
+        = Stream.ofNullable(System.getProperty("home"));
+```
+  
+null이 될 수 있는 객체를 포함하는 스트림값을 flatMap과 함께 사용하는 상황에서는 이 패턴을 더 유용하게 사용할 수 있습니다.  
+```java
+Stream<String> values = Stream.of("config", "home", "user")
+        .flatMap(key -> Stream.ofNullable(System.getProperty(key)));
+```
+### 5.8.3 배열로 스트림 만들기
+배열을 인수로 받는 정적 메서드 `Arrays.stream`을 이용해서 스트림을 만들 수 있습니다.  
+예를 들어 다음처럼 기본형 int로 이루어진 배열을 IntStream으로 변환할 수 있습니다.  
+```java
+int[] numbers = {2, 3, 5, 7, 11, 13};
+int sum = Arrays.stream(numbers).sum(); //합계는 41
+//IntStream으로 변환한 후 sum()을 돌려버림.
+```
+
+### 5.8.4 파일로 스트림 만들기 
+
 
 
 
