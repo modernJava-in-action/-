@@ -353,7 +353,7 @@ public class Transaction {
 }
 ```
 
-아래 리스트 내용대을 토대로 스트림을 활용해보자:
+아래 리스트 내용을 토대로 스트림을 활용해보자:
 ```java
 public static void main(String... args) {
   Trader raoul = new Trader("Raoul", "Cambridge");
@@ -519,3 +519,150 @@ practice7 = 1000
 ```java
   int max = maxCalories.orElse(1);            //값이 없을 때 기본 최댓값을 명시적으로 설정
 ```
+
+#### 숫자 범위
+프로그램에서 특정 범위의 숫자를 이용해야 하는 상황이 자주 발생한다. 이럴때를 위해서 자바 8의 IntStream과 LongStream에서는 range와 rangeClosed라는 두 가지 정적 메서드를 제공한다. 두 메서드 모두 첫 번째 인수로 시작값을, 두 번째 인수로 종료값을 갖는다. 
+```java
+  IntStream evenNumbers = IntStream.rangeClosed(1, 100)       //[1, 100]의 범위를 나타낸다
+                                   .filter(n -> n % 2 == 0);
+  System.out.println(evenNumbers.count());                    //1부터 100까지에는 50개의 짝수가 있다.
+```
+위 코드처럼 rangeClosed를 이용해서 1부터 100까지의 숫자를 만들 수 있다. 이때 rangeClosed 대신에 IntStream.range(1, 100)을 사용하면 1과 100을 포함하지 않으므로 짝수 49개를 반환한다.
+
+#### 숫자 스트림 활용 : 피타고라스 수
+  **피타고라스 수** : (a * a) + (b * b) = (c * c) 공식을 만족하는 세 개의 정수.
+
+**세 수 표현하기**
+세 요소를 갖는 int 배열을 사용하면 쉽게 표현할 수 있다:
+```java
+  int[] pythagorean = new int[]{3,4,5};
+```
+이제 인덱스로 배열의 각 요소에 접근할 수 있다.
+
+**좋은 필터링 조합**
+누군가 세 수 중에서 a,b 두 수만 제공 했다고 가정하자. 두 수가 피타고라스 수의 일부가 될 수 있는지 확인 하려면 a * a + b * b의 제곱근이 정수인지 확인할 수 있다. 자바 코드로는 아래와 같다:
+```java
+  Math.sqrt(a*a + b*b) % 1 == 0;
+```
+
+만약에 a 라는 값이 주어지고 b는 스트림으로 제공이 된다고 가정할 때 아래 코드로 a와 함께 피타고라스 수를 구성하는 모든 b를 필터링할 수 있다.
+```java
+  filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+```
+
+**집합 생성**
+필터를 이용해서 좋은 조합을 갖는 a,b를 선택할 수 있게 되었다. 이제 마지막 세 번쨰 수를 찾아야 한다. 다음처럼 map을 이용해서 각 요소를 피타고라스 수로 변환할 수 있다.
+```java
+  stream.filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+        .map(b -> new int[]{a, b, (int) Math.sqrt(a*a + b*b)});
+```
+
+**b값 생성**
+이제 b값을 생성해야 한다. 코드로 살펴보자:
+```java
+  IntStream.rangeClosed(1, 100)
+           .filter(b -> Math.sqrt(a * a + b * b) % 1 == 0)
+           .boxed()
+           .map(b -> new int[]{a, b, (int) Math.sqrt(a * a + b * b)});
+```
+filter 연산 다음에 rangeClosed가 반환한 IntStream을 boxed를 이용해서 Stream<Integer>로 복원했다. IntStream의 map 메서드는 스트림의 각 요소로 int가 반환될 것을 기대하지만 이는 우리가 원하는 연산이 아니다. 개체값 스트림을 반환하는 IntStream의 mapToObj 메서드를 이용해서 이 코드를 재구현할 수 있다:
+```java
+  IntStream.rangeClosed(1, 100)
+           .filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+           .mapToObj(b -> new int[]{a, b, (int) Math.sqrt(a*a + b*b)});
+```
+
+**a값 생성**
+마지막으로 피타고라스 수를 생성하는 스트림을 완성하기 위해 a값을 생성하는 코드를 추가해보자:
+```java
+  Stream<int[]> pythagoreanTriples = IntStream.rangeClosed(1, 100).boxed()
+        .flatMap(a ->
+          IntStream.rangeClosed(a, 100)
+            .filter(b -> Math.sqrt(a * a + b * b) % 1 == 0)
+            .mapToObj(b -> new int[]{a, b, (int) Math.sqrt(a * a + b * b)})
+        );
+```
+위 코드를 살펴보면 우선 1부터 100까지의 숫자를 만든후 주어진 a를 이용해서 세 수의 스트림을 만든다. 스트림 a의 값을 매핑하면 스트림의 스트림이 만들어지기 때문에 flatMap 메서드를 사용해서 생성된 각각의 스트림을 하나의 평준화된 스트림으로 만들었다. 그리고 b의 범위를 a ~ 100으로 설정해서 중복된 세 수의 생성을 방지했다.
+
+**코드 실행**
+이제 위 코드를 limit을 사용해서 얼마나 많은 세 수를 생성할지만 결정하면 된다.
+```java
+    pythagoreanTriples.limit(5)
+      .forEach(t -> System.out.println(t[0] + ", " + t[1] + ", " + t[2]));
+```
+출력 결과:
+```
+3, 4, 5
+5, 12, 13
+6, 8, 10
+7, 24, 25
+8, 15, 17
+```
+
+## 스트림 만들기
+일련의 값, 배열, 파일 등 다양한 방식으로 스트림을 만드는 방법을 살펴보자.
+
+#### 값으로 스트림 만들기
+임의의 수를 인수로 받는 정적 메서드 Stream.of를 이용해서 스트림을 만들 수 있다. 다음은 Stream.of를 사용해서 문자열 스트림을 만드는 예제다.
+```java
+    Stream<String> stream = Stream.of("Java 8", "Lambdas", "In", "Action");
+    stream.map(String::toUpperCase).forEach(System.out::println);
+```
+
+#### null이 될수 있는 객체로 스트림 만들기
+자바 9에서 null이 될 수 있는 개체를 스트림으로 만들 수 있는 새로운 메서드가 추가되었다. 예를 들어 System.getProperty는 제공된 키에 대응하는 속성이 없으면 null을 반환한다. 이런 메서드를 스트림에 활용하려면 다음처럼 null을 명시적으로 확인해야 했다.
+```java
+    String homeValue = System.getProperty("home");
+    Stream<String> homeValueStream = homeValue == null ? Stream.empty() : Stream.of(value);
+```
+Stream.ofNullable을 활용하면 다음처럼 구현할 수 있다:
+```java
+    Stream<String> homeValueStream = Stream.ofNullable(System.getProperty("home"));
+```
+
+#### 배열로 스트림 만들기
+배열을 인수로 받는 정적 메서드 Arrays.stream을 이용해서 스트림을 만들 수 있다. 다음은 기본형 int로 이루어진 배열을 IntStream으로 변환하는 코드다:
+```java
+    int[] numbers = { 2, 3, 5, 7, 11, 13 };
+    System.out.println(Arrays.stream(numbers).sum());
+```
+
+#### 파일로 스트림 만들기
+파일을 처리하는 등의 I/O 연산에 사용하는 자바의 NIO API도 스트림 API를 활용할 수 있다. 아래는 파일에서 고유한 단어 수를 찾는 코드다:
+```java
+    long uniqueWords = Files.lines(Paths.get("lambdasinaction/chap5/data.txt"), Charset.defaultCharset())
+        .flatMap(line -> Arrays.stream(line.split(" ")))
+        .distinct()
+        .count();
+```
+
+#### 함수로 무한 스트림 만들기
+스트림 API는 함수에서 스트림을 만들 수 있는 두 정적 메서드 Stream.iterate와 Stream.generate를 제공한다. 두 연산을 이용해서 **무한 스트림 (infinite stream) , 크기가 고정되지 않은 스트림,**을 만들 수 있다.
+
+**iterate 메서드**
+```java
+  Stream.iterate(0, n -> n + 2)
+        .limit(10)
+        .forEach(System.out::println);
+```
+iterate 메서드는 초깃값과 람다를 인수로 받아서 새로운 값을 끊임없이 생산할 수 있다. 그렇기 때문에 주로 limit과 같이 사용이 된다. 예제의 스트림은 이전 결과에 2를 더한 값을 끊임없이 생상한다 (짝수). **무한 스트림**은 **언바운드 스트림 (unbound stream)** 이라고도 불린다.
+
+아래는 **피보나치수열**을 생성하는 스트림이다.
+```java
+      Stream.iterate(new int[]{0, 1}, t -> new int[]{t[1], t[0] + t[1]})
+            .limit(10)
+            .map(t -> t[0])
+            .forEach(System.out::println);
+```
+
+**generate 메서드**
+generate도 요구할 때 값을 계산하는 무한 스트림을 만들 수 있다. 하지만 generate는 Supplier<T>를 인수로 받아서 새로운 값을 생산한다.
+
+아래 코드는 0에서 1 사이의 임이의 더블 숫자 열 개를 만든다:
+```java
+  Stream.generate(Math::random)
+        .limit(10)
+        .forEach(System.out::println);
+```
+
+보다시피 generate 메서드도 limit을 사용해서 제한을 주지 않으면 **언바운드** 상태가 된다.
