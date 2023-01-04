@@ -766,6 +766,165 @@ int sum = Arrays.stream(numbers).sum(); //합계는 41
 ```
 
 ### 5.8.4 파일로 스트림 만들기 
+파일을 처리하는 등의 I/O 연산에 사용하는 자바의 NIO API(비블록 I/O)도 스트림 API를 활용할 수 있도록 업데이트되었습니다.  
+java.nio.file.Files의 많은 정적 메서드가 스트림을 반환합니다.  
+  
+예를 들어 Files.lines는 주어진 파일의 행 스트림을 문자열로 반환합니다.  
+파일에서 고융한 단어 수를 찾는 프로그램을 만들 수 있습니다.  
+```java
+public static void main(String[] args) {
+    long uniqueWords = 0;
+    try {
+      uniqueWords = Files.lines(Paths.get("..."), Charset.defaultCharset())
+          .flatMap(line -> Arrays.stream(line.split("")))
+          .distinct()
+          .count();
+      System.out.println("There are " + uniqueWords + " unique words in data.txt");
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+  } //Main END
+```
+Files.lines로 파일의 각 행 요소를 반환하는 스트림을 얻을 수 있습니다.  
+스트림의 소스가 I/O 자원이므로 이 메서드를 try/catch 블록으로 감쌌고 메모리 누수를 막으려면 자원을 닫아야 합니다.  
+기존에는 finally 블록에서 자원을 닫았지만 Stream 인터페이스는 `AutoCloseable` 인터페이스를 구현합니다.  
+  
+**따라서 try 블록 내의 자원은 자동으로 관리됩니다.**  
+line에 split 메서드를 호출해서 각 행의 단어를 분리할 수 있습니다.  
+각 행의 단어를 여러 스트림으로 만드는 것이 아니라 flatMap으로 스트림을 하나로 평면화했습니다.  
+마지막으로 distinct와 count를 연결해서 스트림의 고유 단어 수를 계산합니다.  
+  
+### 5.8.5 함수로 무한 스트림 만들기 : Stream.iterate와 Stream.generate
+스트림 API는 함수에서 스트림을 만들 수 있는 두 정적 메서드 **Stream.iterate와 Stream.generate**를 제공합니다.  
+두 연산을 이용해서 무한 스트림, 즉 고정된 컬렉션에서 고정된 크기로 스트림을 만들었던 것과는 달리 크기가 고정되지 않은 스트림을 만들 수 있습니다.  
+  
+iterate와 generate에서 만든 스트림은 요청할 때마다 주어진 함수를 이용해서 값을 만듭니다. 따라서 무제한으로 값을 계산할 수 있습니다.  
+  
+하지만 보통 무한한 값을 출력하지 않도록 limit(n) 함수를 함께 연결해서 사용합니다.  
+  
+```java
+Stream.iterate(0,  n -> n + 2)
+        .limit(10)
+        .forEach(System.out::println);
+```
+iterate 메서드는 초깃값(예제에서는 0) 과 람다`(UnaryOperator<T>)` 를 인수로 받아서 새로운 값을 끊임없이 생산할 수 있습니다.  
+기본적으로 iterate는 기존 결과에 의존해서 순차적으로 연산을 수행합니다.  
+iterate는 요청할 때마다 값을 생산할 수 있으며 끝이 없으므로 무한 스트림을 만듭니다.  
+  
+이러한 스트림을 언바운드 스트림이라고 표현합니다.  
+  
+일반적으로 연속된 일련의 값을 만들 때는 iterate를 사용합니다.  
+  
+피보나치수열 집합 예제는 다음과 같습니다.  
+```java
+Stream.iterate(new int[]{0, 1},
+        t -> new int[]{t[1], t[0] + t[1]}) // (3,5) 다음은 (5,8) 이므로 t[1], t[0] + t[1]이 온다.
+        .limit(10)
+        .forEach(t -> System.out.println("(" + t[0] + "," + t[1] + ")"));
+```
+iterate는 ??? 자리에 주어지는 람다를 연속적으로 적용하는 사실을 기억해야 합니다.  
+일반적인 피보나치수열을 얻으려면 map으로 각 집합의 첫 번째 요소만 추출합니다.  
+```java
+Stream.iterate(new int[]{0, 1},
+            t -> new int[]{t[1], t[0] + t[1]}) // (3,5) 다음은 (5,8) 이므로 t[1], t[0] + t[1]이 온다.
+        .limit(10)
+        .map(t -> t[0])
+        .forEach(t -> System.out.printf("%d ", t));
+```
+Java9의 iterate 메서드는 프레디케이트를 지원합니다. 예를 들어 0에서 시작해서 100보다 크면 숫자 생성을 중단하는 코드를 다음처럼 구현할 수 있습니다.  
+```java
+ Stream.iterate(0, n -> n < 100, n -> n + 4)
+        .forEach(System.out::println);
+```
+filter 동작으로도 같은 결과를 얻을 수 있다고 생각한 사람도 있을 것입니다.  
+```java
+Stream.iterate(0, n -> n + 4)
+        .filter(n -> n < 100)
+        .forEach(System.out::println);
+```
+안타깝게도 이와 같은 방법으로는 같은 결과를 얻을 수 없습니다. 실제로 위 코드는 종료되지 않습니다.  
+filter 메서드는 이 작업을 언제 중단해야 하는지를 알 수 없기 때문입니다.  
+스트림 쇼트서킷을 지원하는 takeWhile을 이용하는 것이 해법입니다.  
+```java
+Stream.iterate(0, n -> n + 4)
+        .takeWhile(n -> n < 100)
+        .forEach(System.out::println);
+```  
+### generate 메서드
+generate는 iterate와는 다르게 생산된 각 값을 연속적으로 계산하지 않습니다.  
+generate는 `Supplier<T>`를 인수로 받아서 새로운 값을 생산합니다.  
+```java
+Stream.generate(Math::random)
+        .limit(5)
+        .forEach(System.out::println);
+```
+이 코드는 0에서 1 사이에서 임의의 더블 숫자 다섯 개를 만듭니다. limit이 없다면 스트림은 언바운드 상태가 됩니다.  
+  
+Math.random은 상태가 없는 메서드, 즉 나중에 계산에 사용할 어떤 값도 저장해두지 않습니다.  
+하지만 발행자에 꼭 상태가 없어야 하는 것은 아닙니다. 발행자가 상태를 저장한 다음에 스트림의 다음 값을 만들 때 상태를 고칠 수도 있습니다.  
+```java
+
+```
+중요한 점으로는, 병렬 코드에서는 발행자에 상태가 있으면 안전하지 않다는 것입니다. 실제로는 피해야 합니다.  
+  
+IntStream을 이용하면 박싱 연산 문제를 피할 수 있습니다.  
+IntStream의 generate 메서드는 `Supplier<T>` 대신에 IntSupplier를 인수로 받습니다.  
+```java
+IntStream ones = IntStream.generate(() -> 1); //무한 스트림을 생성하는 코드 
+```
+generate 메서드는 주어진 발행자를 이용해서 2를 반환하는 getAsInt 메서드를 반복적으로 호출할 것입니다.  
+  
+IntSupplier 의 getAsInt 메서드를 이용할 수 있는데, 람다 대신 익명 클래스를 사용할 수 있습니다.  
+익명 클래스에서는 getAsInt 메서드의 연산을 커스터마이즈할 수 있는 상태 필드를 정의할 수 있다는 점이 다릅니다.  
+  
+바로 부작용이 생길 수 있음을 보여주는 예제입니다. 지금까지 살펴본 람다는 부작용이 없었는데, 즉 **람다는 상태를 바꾸지 않습니다.**  
+  
+피보나치수열 작업으로 돌아와서 이제 기존의 수열 상태를 저장하고 getAsInt로 다음 요소를 계산하도록 IntSupplier를 만들어야 합니다.  
+또한 다음에 호출될 때는 IntSupplier의 상태를 갱신할 수 있어야 합니다.  
+```java
+public static void main(String[] args) {
+
+    /**
+     * generate 로 fibonacci 만들기
+     * supplier 에 상태를 저장. (병렬 코드애서는 not safe)
+     */
+    IntSupplier fib = new IntSupplier() {
+
+      private int previous = 0;
+      private int current = 1;
+
+      @Override
+      public int getAsInt() {
+        int oldPrevious = this.previous;
+        int nextValue = this.previous + this.current;
+        this.previous = this.current;
+        this.current = nextValue;
+        return oldPrevious;
+      }
+    };
+    IntStream.generate(fib)
+        .limit(10)
+        .forEach(System.out::println);
+  }
+```
+만들어진 IntSupplier 객체는 기존 피보나치 요소와 두 인스턴스 변수에 어떤 피보나치 요소가 들어있는지 추적하므로 **가변** 상태 객체입니다.  
+getAsInt를 호출하면 객체 상태가 바뀌며 새로운 값을 생산합니다. iterate를 사용했을 때는 각 과정에서 새로운 값을 생성하면서도  
+기존 상태를 바꾸지 않는 순수한 불변 상태를 유지했습니다.  
+  
+스트림을 병렬로 처리하면서 올바른 결과를 얻으려면 불변 상태 기법을 고수해야 합니다.  
+limit으로 스트림을 제한하지 않으면, 최종 연산을 수행했을 때 아무 결과도 계산되지 않습니다.  
+  
+마찬가지로 무한 스트림의 요소는 무한적으로 계산이 반복되므로 정렬하거나 리듀스할 수 없습니다.  
+  
+## 5.9 마치며
+- 소스가 정렬되어 있다는 사실을 알고 있을 때 takeWhile과 dropWhile 메서드를 효과적으로 사용할 수 있습니다.  
+- reduce 메서드로 스트림의 모든 요소를 반복 조합하며 값을 도출할 수 있습니다.  
+- filter, map 등은 상태를 저장하지 않는 상태 없는 연산입니다.    
+- reduce같은 연산은 값을 계산하는 데 필요한 상태를 저장합니다.  
+- sorted, distinct 등의 메서드는 새로운 스트림을 반환하기에 앞서 스트림의 모든 요소를 버퍼에 저장해야 합니다. 이런 메서드를 상태 있는 연산이라고 합니다.   
+
+
 
 
 
